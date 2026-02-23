@@ -161,6 +161,10 @@ pub enum Commands {
         /// Output format (markdown, slack, json)
         #[arg(long, default_value = "markdown")]
         format: String,
+
+        /// Use LLM to generate concise session summaries
+        #[arg(long)]
+        summarize: bool,
     },
 
     /// Export session context

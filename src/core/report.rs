@@ -47,7 +47,7 @@ pub fn generate_report(
     }
 }
 
-fn period_to_range(period: &ReportPeriod) -> (DateTime<Utc>, DateTime<Utc>) {
+pub fn period_to_range(period: &ReportPeriod) -> (DateTime<Utc>, DateTime<Utc>) {
     match period {
         ReportPeriod::Day(date) => {
             let start = date.and_hms_opt(0, 0, 0).unwrap();
@@ -138,43 +138,49 @@ fn generate_markdown(
     for (project, project_sessions) in &by_project {
         writeln!(out, "### {} ({} sessions)", project, project_sessions.len())?;
         writeln!(out)?;
-        writeln!(out, "| Request | AI Work Summary | Changes |")?;
-        writeln!(out, "|---------|----------------|---------|")?;
 
-        for session in project_sessions {
+        for (idx, session) in project_sessions.iter().enumerate() {
+            // Use llm_summary if available, otherwise fall back to summary
             let request = session
-                .summary
+                .llm_summary
                 .as_deref()
-                .unwrap_or("-")
-                .chars()
-                .take(60)
-                .collect::<String>();
-            let work = session
+                .or(session.summary.as_deref())
+                .unwrap_or("-");
+            let request: String = request.chars().take(80).collect();
+
+            let work: String = session
                 .work_summary
                 .as_deref()
                 .unwrap_or("-")
                 .chars()
                 .take(80)
-                .collect::<String>();
+                .collect();
 
             // Get file changes
             let file_changes = get_session_file_changes(db, &session.id);
-            let changes_str = file_changes
+            let files_str = file_changes
                 .iter()
                 .map(|(path, prefix)| format!("{}{}", prefix, short_path(path)))
                 .collect::<Vec<_>>()
                 .join(" ");
 
-            writeln!(out, "| {} | {} | {} |", request, work, changes_str)?;
+            writeln!(out, "{}. {}", idx + 1, request)?;
+            // Only show Work line if llm_summary was used (so request != work_summary)
+            if session.llm_summary.is_some() || work != "-" {
+                writeln!(out, "   Work: {}", work)?;
+            }
+            if !files_str.is_empty() {
+                writeln!(out, "   Files: {}", files_str)?;
+            }
+            writeln!(out)?;
         }
 
         // Project file totals
         let project_created: i64 = project_sessions.iter().map(|s| s.files_created).sum();
         let project_modified: i64 = project_sessions.iter().map(|s| s.files_modified).sum();
-        writeln!(out)?;
         writeln!(
             out,
-            "Session total: {} created, {} modified",
+            "Total: {} created, {} modified",
             project_created, project_modified
         )?;
         writeln!(out)?;
@@ -215,10 +221,17 @@ fn generate_slack(
 
     for (project, project_sessions) in &by_project {
         writeln!(out, "*{}* ({} sessions)", project, project_sessions.len())?;
-        for session in project_sessions {
-            let request = session.summary.as_deref().unwrap_or("-");
+        for (idx, session) in project_sessions.iter().enumerate() {
+            let request = session
+                .llm_summary
+                .as_deref()
+                .or(session.summary.as_deref())
+                .unwrap_or("-");
             let work = session.work_summary.as_deref().unwrap_or("-");
-            writeln!(out, "  - {} → {}", request, work)?;
+            writeln!(out, "  {}. {}", idx + 1, request)?;
+            if work != "-" {
+                writeln!(out, "      Work: {}", work)?;
+            }
         }
         writeln!(out)?;
     }
@@ -253,6 +266,7 @@ fn generate_json(
             "project": s.project_name,
             "summary": s.summary,
             "work_summary": s.work_summary,
+            "llm_summary": s.llm_summary,
             "started_at": s.started_at,
             "files_created": s.files_created,
             "files_modified": s.files_modified,

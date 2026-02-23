@@ -34,6 +34,7 @@ pub struct App {
     pub theme: Theme,
     pub view: View,
     pub should_quit: bool,
+    pub status_msg: Option<String>,
 
     // Session list
     pub sessions: Vec<SessionRow>,
@@ -72,6 +73,7 @@ impl App {
             theme: Theme::dark(),
             view: View::SessionList,
             should_quit: false,
+            status_msg: None,
             sessions: Vec::new(),
             filtered_indices: Vec::new(),
             list_state: ListState::default(),
@@ -226,6 +228,7 @@ impl App {
                     if let Ok(ctx) = context::export_context(&self.db, &sid, DetailLevel::Summary) {
                         let path = ".ail-context.md";
                         let _ = std::fs::write(path, &ctx);
+                        self.status_msg = Some(format!("Exported to {}", path));
                     }
                 }
             }
@@ -272,7 +275,9 @@ impl App {
             KeyCode::Char('e') => {
                 if let Some(ref sid) = self.detail_session_id {
                     if let Ok(ctx) = context::export_context(&self.db, sid, DetailLevel::Summary) {
-                        let _ = std::fs::write(".ail-context.md", &ctx);
+                        let path = ".ail-context.md";
+                        let _ = std::fs::write(path, &ctx);
+                        self.status_msg = Some(format!("Exported to {}", path));
                     }
                 }
             }
@@ -358,7 +363,9 @@ impl App {
                             if let Ok(ctx) =
                                 context::export_context(&self.db, &sid, DetailLevel::Summary)
                             {
-                                let _ = std::fs::write(".ail-context.md", &ctx);
+                                let path = ".ail-context.md";
+                                let _ = std::fs::write(path, &ctx);
+                                self.status_msg = Some(format!("Exported to {}", path));
                             }
                         }
                         self.view = View::SessionList;
@@ -398,6 +405,9 @@ impl App {
     pub fn handle_event(&mut self) -> Result<()> {
         if event::poll(Duration::from_millis(100))? {
             if let Event::Key(key) = event::read()? {
+                // Clear status message on any keypress
+                self.status_msg = None;
+
                 // Global quit: Ctrl+C
                 if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
                     self.should_quit = true;
@@ -539,10 +549,12 @@ impl App {
         self.draw_preview(frame, main_chunks[1]);
 
         // Status bar
-        let help_text = if self.search_active {
-            " Type to search | Enter: confirm | Esc: cancel"
+        let help_text = if let Some(ref msg) = self.status_msg {
+            format!(" {} ", msg)
+        } else if self.search_active {
+            " Type to search | Enter: confirm | Esc: cancel".to_string()
         } else {
-            " j/k: Navigate | Enter: Actions | /: Search | Tab: Agent | d: Detail | e: Export | r: Resume | h: History | q: Quit"
+            " j/k: Navigate | Enter: Actions | /: Search | Tab: Agent | d: Detail | e: Export | r: Resume | h: History | q: Quit".to_string()
         };
         let status = Paragraph::new(help_text).style(self.theme.status_bar_style());
         frame.render_widget(status, chunks[2]);
@@ -909,11 +921,19 @@ pub fn run_tui() -> Result<()> {
     if let Ok(cmd) = std::env::var("AIL_RESUME_CMD") {
         std::env::remove_var("AIL_RESUME_CMD");
         println!("Resuming session...");
-        println!("Run: {}", cmd);
+        std::process::Command::new("sh")
+            .arg("-c")
+            .arg(&cmd)
+            .status()?;
     }
     if let Ok(path) = std::env::var("AIL_CD_PATH") {
         std::env::remove_var("AIL_CD_PATH");
-        println!("cd {}", path);
+        // Open in new terminal window (macOS) since child process cd doesn't affect parent shell
+        let _ = std::process::Command::new("open")
+            .arg("-a")
+            .arg("Terminal")
+            .arg(&path)
+            .status();
     }
 
     Ok(())

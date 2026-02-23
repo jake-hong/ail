@@ -181,10 +181,7 @@ fn parse_codex_session(path: &std::path::Path, session_id: &str) -> Result<Optio
         tags: Vec::new(),
     };
 
-    session.summary = session.first_user_message().map(|s| {
-        let end = s.char_indices().nth(200).map(|(i, _)| i).unwrap_or(s.len());
-        s[..end].to_string()
-    });
+    session.summary = session.extract_summary();
     session.work_summary = session.extract_work_summary();
 
     Ok(Some(session))

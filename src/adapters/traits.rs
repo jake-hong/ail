@@ -145,32 +145,127 @@ impl SessionData {
             .map(|m| m.content.as_str())
     }
 
-    /// Extract work summary from the last assistant message using rule-based extraction
+    /// Extract a concise summary from the first user message.
+    /// Takes only the first meaningful sentence, skipping markdown headers, limited to 120 chars.
+    pub fn extract_summary(&self) -> Option<String> {
+        let first_msg = self.first_user_message()?;
+
+        // Skip markdown headers and empty lines, find first content line
+        let mut first_sentence = None;
+        for line in first_msg.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with('#') {
+                continue;
+            }
+            // Extract first sentence by splitting on sentence boundaries
+            let text = trimmed;
+            let end_pos = text
+                .char_indices()
+                .find(|(_, c)| *c == '.' || *c == '!' || *c == '?' || *c == '\n')
+                .map(|(i, c)| {
+                    // Include the punctuation mark itself
+                    i + c.len_utf8()
+                })
+                .unwrap_or(text.len());
+            first_sentence = Some(&text[..end_pos]);
+            break;
+        }
+
+        let sentence = first_sentence?.trim();
+        if sentence.is_empty() {
+            return None;
+        }
+
+        // Limit to 120 chars
+        let end = sentence
+            .char_indices()
+            .nth(120)
+            .map(|(i, _)| i)
+            .unwrap_or(sentence.len());
+        Some(sentence[..end].to_string())
+    }
+
+    /// Extract work summary from the last assistant message using rule-based extraction.
+    /// Uses a 3-stage approach: summary headers → keyword scoring → fallback.
+    /// Skips code blocks, tables, and comments. Strips markdown formatting.
     pub fn extract_work_summary(&self) -> Option<String> {
         let last_msg = self.last_assistant_message()?;
-        // Look for completion patterns
-        let patterns = ["완료", "구현", "추가", "수정", "생성", "삭제", "변경",
-                        "complete", "implement", "added", "modified", "created", "fixed"];
 
         let lines: Vec<&str> = last_msg.lines().collect();
-        for line in &lines {
-            let lower = line.to_lowercase();
-            if patterns.iter().any(|p| lower.contains(p)) {
+
+        // Filter out code blocks, tables, and comments
+        let mut in_code_block = false;
+        let meaningful_lines: Vec<&str> = lines
+            .iter()
+            .filter(|line| {
                 let trimmed = line.trim();
-                if !trimmed.is_empty() && trimmed.len() > 5 {
-                    // Return first 200 chars
-                    let end = trimmed.char_indices().nth(200).map(|(i, _)| i).unwrap_or(trimmed.len());
-                    return Some(trimmed[..end].to_string());
+                if trimmed.starts_with("```") {
+                    in_code_block = !in_code_block;
+                    return false;
+                }
+                if in_code_block {
+                    return false;
+                }
+                // Skip table rows, HTML comments, empty lines
+                if trimmed.starts_with('|') || trimmed.starts_with("<!--") || trimmed.is_empty() {
+                    return false;
+                }
+                true
+            })
+            .copied()
+            .collect();
+
+        // Stage 1: Look for summary/conclusion headers and take the next line
+        let summary_headers = ["## summary", "## 요약", "## result", "## 결과", "## done", "## 완료"];
+        for (i, line) in meaningful_lines.iter().enumerate() {
+            let lower = line.trim().to_lowercase();
+            if summary_headers.iter().any(|h| lower.starts_with(h)) {
+                // Take the next non-empty line after the header
+                for next_line in &meaningful_lines[i + 1..] {
+                    let cleaned = strip_markdown(next_line.trim());
+                    if !cleaned.is_empty() && cleaned.len() > 3 {
+                        return Some(truncate_str(&cleaned, 120));
+                    }
                 }
             }
         }
 
-        // Fallback: first non-empty line up to 200 chars
-        for line in &lines {
+        // Stage 2: Keyword scoring — find the best matching line
+        let keywords = [
+            "완료", "구현", "추가", "수정", "생성", "삭제", "변경",
+            "complete", "implement", "added", "modified", "created", "fixed",
+            "updated", "refactored", "removed", "resolved",
+        ];
+
+        let mut best_line: Option<(&str, usize)> = None;
+        for line in &meaningful_lines {
+            let lower = line.to_lowercase();
             let trimmed = line.trim();
-            if !trimmed.is_empty() && trimmed.len() > 5 {
-                let end = trimmed.char_indices().nth(200).map(|(i, _)| i).unwrap_or(trimmed.len());
-                return Some(trimmed[..end].to_string());
+
+            // Skip short lines, markdown headers
+            if trimmed.len() <= 5 || trimmed.starts_with('#') {
+                continue;
+            }
+
+            let score: usize = keywords.iter().filter(|kw| lower.contains(*kw)).count();
+            if score > 0 {
+                if best_line.is_none() || score > best_line.unwrap().1 {
+                    best_line = Some((trimmed, score));
+                }
+            }
+        }
+
+        if let Some((line, _)) = best_line {
+            let cleaned = strip_markdown(line);
+            return Some(truncate_str(&cleaned, 120));
+        }
+
+        // Stage 3: Fallback — first non-empty meaningful line
+        for line in &meaningful_lines {
+            let trimmed = line.trim();
+            if trimmed.len() > 5 && !trimmed.starts_with('#') {
+                let cleaned = strip_markdown(trimmed);
+                return Some(truncate_str(&cleaned, 120));
             }
         }
 
@@ -197,6 +292,34 @@ impl SessionData {
         }
         files
     }
+}
+
+/// Strip markdown formatting: bold, italic, list markers
+fn strip_markdown(s: &str) -> String {
+    let mut result = s.to_string();
+    // Remove bold/italic markers
+    result = result.replace("**", "");
+    result = result.replace("__", "");
+    // Remove leading list markers: "- ", "* ", "1. "
+    let trimmed = result.trim_start();
+    if trimmed.starts_with("- ") || trimmed.starts_with("* ") {
+        result = trimmed[2..].to_string();
+    } else if let Some(rest) = trimmed.strip_prefix(|c: char| c.is_ascii_digit()) {
+        if let Some(rest) = rest.strip_prefix(". ") {
+            result = rest.to_string();
+        }
+    }
+    result.trim().to_string()
+}
+
+/// Truncate a string to at most `max_chars` characters
+fn truncate_str(s: &str, max_chars: usize) -> String {
+    let end = s
+        .char_indices()
+        .nth(max_chars)
+        .map(|(i, _)| i)
+        .unwrap_or(s.len());
+    s[..end].to_string()
 }
 
 fn shorten_path(path: &str) -> String {

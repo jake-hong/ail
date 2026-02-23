@@ -38,6 +38,9 @@ regex = "1"
 unicode-width = "0.2"
 fuzzy-matcher = "0.3"
 
+# HTTP (for LLM summarization)
+ureq = { version = "2", features = ["json"] }
+
 # Async (for MCP server)
 tokio = { version = "1", features = ["full"] }
 

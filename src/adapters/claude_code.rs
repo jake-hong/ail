@@ -198,11 +198,8 @@ impl ClaudeCodeAdapter {
             tags: Vec::new(),
         };
 
-        // Extract summary from first user message
-        session.summary = session.first_user_message().map(|s| {
-            let end = s.char_indices().nth(200).map(|(i, _)| i).unwrap_or(s.len());
-            s[..end].to_string()
-        });
+        // Extract summary from first user message (first sentence, 120 chars)
+        session.summary = session.extract_summary();
 
         // Extract work summary
         session.work_summary = session.extract_work_summary();

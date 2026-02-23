@@ -52,6 +52,16 @@ pub struct ExportConfig {
 pub struct ReportConfig {
     pub default_format: String,
     pub include_file_changes: bool,
+    #[serde(default)]
+    pub summarize: SummarizeConfig,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SummarizeConfig {
+    pub enabled: bool,
+    pub api_key: Option<String>,
+    pub model: String,
+    pub max_input_chars: usize,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -126,6 +136,18 @@ impl Default for ReportConfig {
         Self {
             default_format: "markdown".to_string(),
             include_file_changes: true,
+            summarize: SummarizeConfig::default(),
+        }
+    }
+}
+
+impl Default for SummarizeConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            api_key: None,
+            model: "claude-haiku-4-5-20251001".to_string(),
+            max_input_chars: 4000,
         }
     }
 }

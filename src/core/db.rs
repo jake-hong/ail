@@ -16,6 +16,7 @@ pub struct SessionRow {
     pub project_name: Option<String>,
     pub summary: Option<String>,
     pub work_summary: Option<String>,
+    pub llm_summary: Option<String>,
     pub started_at: Option<String>,
     pub ended_at: Option<String>,
     pub message_count: i64,
@@ -80,6 +81,7 @@ impl Database {
 
         let db = Self { conn };
         db.init_schema()?;
+        db.migrate()?;
         Ok(db)
     }
 
@@ -87,6 +89,7 @@ impl Database {
         let conn = Connection::open_in_memory()?;
         let db = Self { conn };
         db.init_schema()?;
+        db.migrate()?;
         Ok(db)
     }
 
@@ -150,6 +153,14 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_tool_calls_file ON tool_calls(file_path);
             ",
         )?;
+        Ok(())
+    }
+
+    fn migrate(&self) -> Result<()> {
+        // Safe migration: add llm_summary column if it doesn't exist
+        self.conn
+            .execute("ALTER TABLE sessions ADD COLUMN llm_summary TEXT", [])
+            .ok();
         Ok(())
     }
 
@@ -266,7 +277,7 @@ impl Database {
     pub fn get_session(&self, session_id: &str) -> Result<Option<SessionRow>> {
         self.conn
             .query_row(
-                "SELECT id, agent, project_path, project_name, summary, work_summary, started_at, ended_at, message_count, files_created, files_modified, files_deleted, tags
+                "SELECT id, agent, project_path, project_name, summary, work_summary, llm_summary, started_at, ended_at, message_count, files_created, files_modified, files_deleted, tags
                  FROM sessions WHERE id = ?1",
                 params![session_id],
                 |row| {
@@ -277,13 +288,14 @@ impl Database {
                         project_name: row.get(3)?,
                         summary: row.get(4)?,
                         work_summary: row.get(5)?,
-                        started_at: row.get(6)?,
-                        ended_at: row.get(7)?,
-                        message_count: row.get(8)?,
-                        files_created: row.get(9)?,
-                        files_modified: row.get(10)?,
-                        files_deleted: row.get(11)?,
-                        tags: row.get::<_, String>(12)?,
+                        llm_summary: row.get(6)?,
+                        started_at: row.get(7)?,
+                        ended_at: row.get(8)?,
+                        message_count: row.get(9)?,
+                        files_created: row.get(10)?,
+                        files_modified: row.get(11)?,
+                        files_deleted: row.get(12)?,
+                        tags: row.get::<_, String>(13)?,
                     })
                 },
             )
@@ -300,7 +312,7 @@ impl Database {
         limit: usize,
     ) -> Result<Vec<SessionRow>> {
         let mut sql = String::from(
-            "SELECT id, agent, project_path, project_name, summary, work_summary, started_at, ended_at, message_count, files_created, files_modified, files_deleted, tags
+            "SELECT id, agent, project_path, project_name, summary, work_summary, llm_summary, started_at, ended_at, message_count, files_created, files_modified, files_deleted, tags
              FROM sessions WHERE 1=1",
         );
         let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
@@ -339,13 +351,14 @@ impl Database {
                 project_name: row.get(3)?,
                 summary: row.get(4)?,
                 work_summary: row.get(5)?,
-                started_at: row.get(6)?,
-                ended_at: row.get(7)?,
-                message_count: row.get(8)?,
-                files_created: row.get(9)?,
-                files_modified: row.get(10)?,
-                files_deleted: row.get(11)?,
-                tags: row.get::<_, String>(12)?,
+                llm_summary: row.get(6)?,
+                started_at: row.get(7)?,
+                ended_at: row.get(8)?,
+                message_count: row.get(9)?,
+                files_created: row.get(10)?,
+                files_modified: row.get(11)?,
+                files_deleted: row.get(12)?,
+                tags: row.get::<_, String>(13)?,
             })
         })?;
 
@@ -474,7 +487,7 @@ impl Database {
     ) -> Result<Vec<SessionRow>> {
         let pattern = format!("%{}%", file_path);
         let mut stmt = self.conn.prepare(
-            "SELECT DISTINCT s.id, s.agent, s.project_path, s.project_name, s.summary, s.work_summary, s.started_at, s.ended_at, s.message_count, s.files_created, s.files_modified, s.files_deleted, s.tags
+            "SELECT DISTINCT s.id, s.agent, s.project_path, s.project_name, s.summary, s.work_summary, s.llm_summary, s.started_at, s.ended_at, s.message_count, s.files_created, s.files_modified, s.files_deleted, s.tags
              FROM sessions s
              JOIN tool_calls tc ON tc.session_id = s.id
              WHERE tc.file_path LIKE ?1
@@ -490,13 +503,14 @@ impl Database {
                 project_name: row.get(3)?,
                 summary: row.get(4)?,
                 work_summary: row.get(5)?,
-                started_at: row.get(6)?,
-                ended_at: row.get(7)?,
-                message_count: row.get(8)?,
-                files_created: row.get(9)?,
-                files_modified: row.get(10)?,
-                files_deleted: row.get(11)?,
-                tags: row.get::<_, String>(12)?,
+                llm_summary: row.get(6)?,
+                started_at: row.get(7)?,
+                ended_at: row.get(8)?,
+                message_count: row.get(9)?,
+                files_created: row.get(10)?,
+                files_modified: row.get(11)?,
+                files_deleted: row.get(12)?,
+                tags: row.get::<_, String>(13)?,
             })
         })?;
 
@@ -640,6 +654,14 @@ impl Database {
             total_files_deleted: file_stats.2,
             most_modified_files,
         })
+    }
+
+    pub fn update_llm_summary(&self, session_id: &str, llm_summary: &str) -> Result<()> {
+        self.conn.execute(
+            "UPDATE sessions SET llm_summary = ?1 WHERE id = ?2",
+            params![llm_summary, session_id],
+        )?;
+        Ok(())
     }
 
     pub fn session_exists(&self, session_id: &str) -> Result<bool> {

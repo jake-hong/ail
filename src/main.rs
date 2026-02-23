@@ -79,7 +79,8 @@ fn run_command(cmd: Commands, json_output: bool) -> Result<()> {
             project,
             output,
             format,
-        } => cmd_report(day, date, week, month, quarter, from, to, project, output, format),
+            summarize,
+        } => cmd_report(day, date, week, month, quarter, from, to, project, output, format, summarize),
         Commands::Export {
             session_id,
             clipboard,
@@ -678,8 +679,10 @@ fn cmd_report(
     project: Option<String>,
     output: Option<String>,
     format: String,
+    summarize: bool,
 ) -> Result<()> {
     let db = open_db()?;
+    let config = cfg::load_config()?;
 
     let period = report::resolve_period(
         day,
@@ -690,6 +693,13 @@ fn cmd_report(
         from.as_deref(),
         to.as_deref(),
     )?;
+
+    // Run LLM summarization if --summarize flag or config enabled
+    if summarize || config.report.summarize.enabled {
+        let (from_dt, to_dt) = report::period_to_range(&period);
+        let sessions = db.list_sessions(None, project.as_deref(), Some(from_dt), Some(to_dt), 1000)?;
+        crate::core::summarize::summarize_sessions(&db, &sessions, &config.report.summarize)?;
+    }
 
     let fmt = ReportFormat::from_str(&format);
     let report_content = report::generate_report(&db, &period, project.as_deref(), fmt)?;

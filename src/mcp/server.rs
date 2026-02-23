@@ -175,6 +175,17 @@ fn handle_tools_list(id: Option<Value>) -> Value {
                         },
                         "required": ["session_id"]
                     }
+                },
+                {
+                    "name": "get_full_session",
+                    "description": "Get full untruncated session content for summarization. Use this to get complete session messages, file changes, and metadata so the calling agent can generate its own summary.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "session_id": { "type": "string", "description": "Session ID" }
+                        },
+                        "required": ["session_id"]
+                    }
                 }
             ]
         }
@@ -195,6 +206,7 @@ fn handle_tools_call(id: Option<Value>, params: &Value, db: &Database) -> Value 
         "get_session_summary" => tool_get_session_summary(&arguments, db),
         "get_stats" => tool_get_stats(&arguments, db),
         "export_context" => tool_export_context(&arguments, db),
+        "get_full_session" => tool_get_full_session(&arguments, db),
         _ => Err(anyhow::anyhow!("Unknown tool: {}", tool_name)),
     };
 
@@ -343,6 +355,7 @@ fn tool_get_session_summary(args: &Value, db: &Database) -> Result<String> {
         "project_name": session.project_name,
         "summary": session.summary,
         "work_summary": session.work_summary,
+        "llm_summary": session.llm_summary,
         "started_at": session.started_at,
         "ended_at": session.ended_at,
         "message_count": session.message_count,
@@ -376,6 +389,68 @@ fn tool_get_stats(args: &Value, db: &Database) -> Result<String> {
         "files_modified": stats.total_files_modified,
         "files_deleted": stats.total_files_deleted,
         "most_modified_files": stats.most_modified_files,
+    });
+
+    Ok(serde_json::to_string_pretty(&output)?)
+}
+
+fn tool_get_full_session(args: &Value, db: &Database) -> Result<String> {
+    let session_id = args
+        .get("session_id")
+        .and_then(|s| s.as_str())
+        .ok_or_else(|| anyhow::anyhow!("session_id is required"))?;
+
+    let session = db
+        .get_session(session_id)?
+        .ok_or_else(|| anyhow::anyhow!("Session not found: {}", session_id))?;
+
+    let messages = db.get_messages(session_id)?;
+    let tool_calls = db.get_tool_calls(session_id)?;
+
+    // Build full untruncated messages
+    let full_messages: Vec<Value> = messages
+        .iter()
+        .filter(|m| m.role != "tool")
+        .map(|m| {
+            json!({
+                "role": m.role,
+                "content": m.content,
+                "timestamp": m.timestamp,
+            })
+        })
+        .collect();
+
+    // Build file changes
+    let mut files = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for tc in &tool_calls {
+        if let Some(ref fp) = tc.file_path {
+            if seen.insert(fp.clone()) {
+                let change_type = match tc.tool_name.as_str() {
+                    "Write" | "create_file" => "created",
+                    "Edit" | "edit_file" => "modified",
+                    "delete_file" => "deleted",
+                    _ => "other",
+                };
+                files.push(json!({ "path": fp, "change_type": change_type }));
+            }
+        }
+    }
+
+    let output = json!({
+        "id": session.id,
+        "agent": session.agent,
+        "project_path": session.project_path,
+        "project_name": session.project_name,
+        "summary": session.summary,
+        "work_summary": session.work_summary,
+        "llm_summary": session.llm_summary,
+        "started_at": session.started_at,
+        "ended_at": session.ended_at,
+        "message_count": session.message_count,
+        "messages": full_messages,
+        "files_changed": files,
+        "tags": session.tags,
     });
 
     Ok(serde_json::to_string_pretty(&output)?)
