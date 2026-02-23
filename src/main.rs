@@ -205,39 +205,7 @@ fn cmd_setup() -> Result<()> {
     println!("    Run `ail serve` to start the MCP server — your AI agents");
     println!("    can then query your session history programmatically.");
     println!();
-    // GitHub star prompt
-    if is_gh_installed() {
-        println!("  ─────────────────────────────────────────");
-        print!("  Star ail on GitHub? (Y/n): ");
-        std::io::stdout().flush().ok();
-        let mut input = String::new();
-        std::io::stdin().read_line(&mut input).ok();
-        let answer = input.trim().to_lowercase();
-        if answer.is_empty() || answer == "y" || answer == "yes" {
-            match std::process::Command::new("gh")
-                .args(["api", "-X", "PUT", "/user/starred/jake-hong/ail"])
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .status()
-            {
-                Ok(status) if status.success() => {
-                    println!("  Starred! Thank you for supporting ail.");
-                }
-                _ => {
-                    println!("  Could not star — you can do it manually:");
-                    println!("  https://github.com/jake-hong/ail");
-                }
-            }
-        } else {
-            println!("  No problem! If you change your mind:");
-            println!("  https://github.com/jake-hong/ail");
-        }
-    } else {
-        println!("  ─────────────────────────────────────────");
-        println!("  If ail is useful, a star on GitHub helps:");
-        println!("  https://github.com/jake-hong/ail");
-    }
-    println!("  ─────────────────────────────────────────");
+    println!("  Like ail? Star it on GitHub: github.com/jake-hong/ail");
     println!();
 
     Ok(())
@@ -821,14 +789,3 @@ fn cmd_config(edit: bool) -> Result<()> {
     Ok(())
 }
 
-// ── Helpers ──
-
-fn is_gh_installed() -> bool {
-    std::process::Command::new("gh")
-        .arg("--version")
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
-}

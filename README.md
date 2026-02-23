@@ -6,19 +6,19 @@ ail indexes your local AI session data into a single SQLite database with full-t
 
 ---
 
-## Quick Start
+## Getting Started
 
 ```bash
 brew install jake-hong/tap/ail
-ail setup
 ```
 
-Restart your shell. Then just type `ail`.
-
-### Quick Resume (no TUI)
+Run `ail setup` to detect your agents and index sessions. After that:
 
 ```bash
-ail resume project-name    # fuzzy-matches and resumes the best match directly
+ail                        # open the TUI browser
+ail list --last 7d         # recent sessions from the terminal
+ail history -k "auth"      # search across all conversations
+ail report --week          # generate a weekly work report
 ```
 
 ---
