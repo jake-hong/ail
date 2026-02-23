@@ -17,6 +17,7 @@ use crate::core::search::{self, SearchOptions};
 use anyhow::{bail, Result};
 use chrono::Utc;
 use clap::Parser;
+use std::io::Write;
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -101,50 +102,119 @@ fn open_db() -> Result<Database> {
 
 fn cmd_setup() -> Result<()> {
     println!();
-    println!("  Welcome to ail — AI Log");
+    println!("  ┌─────────────────────────────────────┐");
+    println!("  │  ail — AI Log                        │");
+    println!("  │  Unified AI coding session manager   │");
+    println!("  └─────────────────────────────────────┘");
     println!();
 
     // Step 1: Detect agents
-    println!("  Step 1/2: Detecting installed agents...");
+    println!("  [1/3] Detecting installed agents...");
+    println!();
     let all = adapters::all_adapters();
+    let installed_count = all.iter().filter(|a| a.is_installed()).count();
     for adapter in &all {
-        let status = if adapter.is_installed() { "✓" } else { "✗" };
-        println!(
-            "    {} {} {}",
-            status,
-            adapter.agent_type().display_name(),
-            if adapter.is_installed() {
-                format!("found ({})", adapter.data_dir().display())
-            } else {
-                "not found".to_string()
-            }
-        );
+        if adapter.is_installed() {
+            println!(
+                "    [v] {} — {}",
+                adapter.agent_type().display_name(),
+                adapter.data_dir().display()
+            );
+        } else {
+            println!(
+                "    [ ] {} — not found",
+                adapter.agent_type().display_name()
+            );
+        }
     }
+    println!();
+    if installed_count == 0 {
+        println!("    No agents found. Install Claude Code, Codex, or Cursor first.");
+        println!();
+        return Ok(());
+    }
+    println!("    {} agent(s) detected.", installed_count);
     println!();
 
     // Step 2: Index
-    println!("  Step 2/2: Indexing sessions...");
+    println!("  [2/3] Indexing sessions...");
+    println!();
     let db = open_db()?;
     let results = indexer::index_all(&db)?;
+    let mut total_found: usize = 0;
+    let mut total_new: usize = 0;
     for r in &results {
-        println!(
-            "    Indexing {} sessions... {} found, {} new",
-            r.agent, r.sessions_found, r.sessions_new
-        );
+        if r.sessions_found > 0 {
+            println!(
+                "    {} — {} sessions found, {} new",
+                r.agent, r.sessions_found, r.sessions_new
+            );
+        }
+        total_found += r.sessions_found;
+        total_new += r.sessions_new;
     }
-
-    let total: usize = results.iter().map(|r| r.sessions_found).sum();
-    println!("    ✓ {} sessions indexed", total);
     println!();
-    println!("  Done! Run `ail` to start the TUI.");
-    println!();
-    println!("  Tip: Add ail as MCP server for AI-powered reports:");
-    println!("    ail serve --mcp");
+    println!("    Total: {} sessions indexed ({} new)", total_found, total_new);
     println!();
 
-    // Save default config
+    // Step 3: Config
+    println!("  [3/3] Writing config...");
     let config = cfg::AilConfig::default();
     cfg::save_config(&config)?;
+    let config_path = cfg::config_path();
+    println!("    Config: {}", config_path.display());
+    println!("    Database: {}", cfg::db_path().display());
+    println!();
+
+    // Done
+    println!("  ┌─────────────────────────────────────┐");
+    println!("  │  Setup complete.                     │");
+    println!("  └─────────────────────────────────────┘");
+    println!();
+    println!("  Quick start:");
+    println!("    ail               Open TUI session browser");
+    println!("    ail list          List recent sessions");
+    println!("    ail history -k    Search conversation history");
+    println!("    ail report --week Weekly work report");
+    println!();
+    println!("  Tip:");
+    println!("    Run `ail serve` to start the MCP server — your AI agents");
+    println!("    can then query your session history programmatically.");
+    println!();
+    // GitHub star prompt
+    if is_gh_installed() {
+        println!("  ─────────────────────────────────────────");
+        print!("  Star ail on GitHub? (Y/n): ");
+        std::io::stdout().flush().ok();
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input).ok();
+        let answer = input.trim().to_lowercase();
+        if answer.is_empty() || answer == "y" || answer == "yes" {
+            match std::process::Command::new("gh")
+                .args(["api", "-X", "PUT", "/user/starred/sungeun/ail"])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+            {
+                Ok(status) if status.success() => {
+                    println!("  Starred! Thank you for supporting ail.");
+                }
+                _ => {
+                    println!("  Could not star — you can do it manually:");
+                    println!("  https://github.com/sungeun/ail");
+                }
+            }
+        } else {
+            println!("  No problem! If you change your mind:");
+            println!("  https://github.com/sungeun/ail");
+        }
+    } else {
+        println!("  ─────────────────────────────────────────");
+        println!("  If ail is useful, a star on GitHub helps:");
+        println!("  https://github.com/sungeun/ail");
+    }
+    println!("  ─────────────────────────────────────────");
+    println!();
 
     Ok(())
 }
@@ -725,4 +795,16 @@ fn cmd_config(edit: bool) -> Result<()> {
         println!("{}", content);
     }
     Ok(())
+}
+
+// ── Helpers ──
+
+fn is_gh_installed() -> bool {
+    std::process::Command::new("gh")
+        .arg("--version")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
 }
