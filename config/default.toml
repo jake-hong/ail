@@ -1,0 +1,32 @@
+[general]
+db_path = "~/.local/share/ail/index.db"
+auto_index = true
+index_interval = 300
+
+[agents]
+enabled = ["claude-code", "codex", "cursor"]
+
+[agents.claude-code]
+data_dir = "~/.claude"
+
+[agents.codex]
+data_dir = "~/.codex"
+
+[agents.cursor]
+data_dir = "~/.cursor"
+
+[export]
+default_detail = "summary"
+template = "default"
+
+[report]
+default_format = "markdown"
+include_file_changes = true
+
+[tui]
+theme = "dark"
+max_results = 200
+preview_lines = 20
+
+[mcp]
+transport = "stdio"
