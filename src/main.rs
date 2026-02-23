@@ -108,50 +108,74 @@ fn cmd_setup() -> Result<()> {
     println!("  └─────────────────────────────────────┘");
     println!();
 
-    // Step 1: Detect agents
-    println!("  [1/3] Detecting installed agents...");
+    // Step 1: Detect agents and let user choose
+    println!("  [1/3] Select agents to index...");
     println!();
     let all = adapters::all_adapters();
-    let installed_count = all.iter().filter(|a| a.is_installed()).count();
-    for adapter in &all {
-        if adapter.is_installed() {
-            println!(
-                "    [v] {} — {}",
-                adapter.agent_type().display_name(),
-                adapter.data_dir().display()
-            );
+    let installed: Vec<_> = all.iter().filter(|a| a.is_installed()).collect();
+
+    if installed.is_empty() {
+        println!("    No agents found. Install Claude Code, Codex, or Cursor first.");
+        println!();
+        return Ok(());
+    }
+
+    let mut selected_agents: Vec<String> = Vec::new();
+    for (i, adapter) in installed.iter().enumerate() {
+        print!(
+            "    [{}] {} ({}) — Index? (Y/n): ",
+            i + 1,
+            adapter.agent_type().display_name(),
+            adapter.data_dir().display()
+        );
+        std::io::stdout().flush().ok();
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input).ok();
+        let answer = input.trim().to_lowercase();
+        if answer.is_empty() || answer == "y" || answer == "yes" {
+            println!("        -> selected");
+            selected_agents.push(adapter.agent_type().as_str().to_string());
         } else {
+            println!("        -> skipped");
+        }
+    }
+
+    // Also show agents that are not installed
+    for adapter in &all {
+        if !adapter.is_installed() {
             println!(
                 "    [ ] {} — not found",
                 adapter.agent_type().display_name()
             );
         }
     }
+
     println!();
-    if installed_count == 0 {
-        println!("    No agents found. Install Claude Code, Codex, or Cursor first.");
+    if selected_agents.is_empty() {
+        println!("    No agents selected. Run `ail setup` again to choose.");
         println!();
         return Ok(());
     }
-    println!("    {} agent(s) detected.", installed_count);
+    println!("    {} agent(s) selected.", selected_agents.len());
     println!();
 
-    // Step 2: Index
+    // Step 2: Index selected agents only
     println!("  [2/3] Indexing sessions...");
     println!();
     let db = open_db()?;
-    let results = indexer::index_all(&db)?;
     let mut total_found: usize = 0;
     let mut total_new: usize = 0;
-    for r in &results {
-        if r.sessions_found > 0 {
-            println!(
-                "    {} — {} sessions found, {} new",
-                r.agent, r.sessions_found, r.sessions_new
-            );
+    for agent_name in &selected_agents {
+        if let Some(result) = indexer::index_agent(&db, agent_name)? {
+            if result.sessions_found > 0 {
+                println!(
+                    "    {} — {} sessions found, {} new",
+                    result.agent, result.sessions_found, result.sessions_new
+                );
+            }
+            total_found += result.sessions_found;
+            total_new += result.sessions_new;
         }
-        total_found += r.sessions_found;
-        total_new += r.sessions_new;
     }
     println!();
     println!("    Total: {} sessions indexed ({} new)", total_found, total_new);
