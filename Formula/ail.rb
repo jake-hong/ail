@@ -1,7 +1,7 @@
 class Ail < Formula
   desc "Unified CLI/TUI for managing AI coding agent sessions"
-  homepage "https://github.com/sungeun/ail"
-  url "https://github.com/sungeun/ail/archive/refs/tags/v0.1.0.tar.gz"
+  homepage "https://github.com/jake-hong/ail"
+  url "https://github.com/jake-hong/ail/archive/refs/tags/v0.1.0.tar.gz"
   sha256 "PLACEHOLDER"
   license "MIT"
 

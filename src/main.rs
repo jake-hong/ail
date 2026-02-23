@@ -191,7 +191,7 @@ fn cmd_setup() -> Result<()> {
         let answer = input.trim().to_lowercase();
         if answer.is_empty() || answer == "y" || answer == "yes" {
             match std::process::Command::new("gh")
-                .args(["api", "-X", "PUT", "/user/starred/sungeun/ail"])
+                .args(["api", "-X", "PUT", "/user/starred/jake-hong/ail"])
                 .stdout(std::process::Stdio::null())
                 .stderr(std::process::Stdio::null())
                 .status()
@@ -201,17 +201,17 @@ fn cmd_setup() -> Result<()> {
                 }
                 _ => {
                     println!("  Could not star — you can do it manually:");
-                    println!("  https://github.com/sungeun/ail");
+                    println!("  https://github.com/jake-hong/ail");
                 }
             }
         } else {
             println!("  No problem! If you change your mind:");
-            println!("  https://github.com/sungeun/ail");
+            println!("  https://github.com/jake-hong/ail");
         }
     } else {
         println!("  ─────────────────────────────────────────");
         println!("  If ail is useful, a star on GitHub helps:");
-        println!("  https://github.com/sungeun/ail");
+        println!("  https://github.com/jake-hong/ail");
     }
     println!("  ─────────────────────────────────────────");
     println!();

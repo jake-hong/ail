@@ -9,7 +9,7 @@ ail indexes your local AI session data into a single SQLite database with full-t
 ## Quick Start
 
 ```bash
-brew install sungeun/tap/ail
+brew install jake-hong/tap/ail
 ail setup
 ```
 
@@ -41,21 +41,21 @@ If you use multiple AI coding agents, your session history is scattered across d
 ### Homebrew (recommended)
 
 ```bash
-brew install sungeun/tap/ail
+brew install jake-hong/tap/ail
 ```
 
 ### From source
 
 ```bash
 # Requires Rust 1.70+
-git clone https://github.com/sungeun/ail.git
+git clone https://github.com/jake-hong/ail.git
 cd ail
 cargo install --path .
 ```
 
 ### Download binary
 
-Pre-built binaries for macOS (Apple Silicon / Intel) and Linux are available on the [Releases](https://github.com/sungeun/ail/releases) page.
+Pre-built binaries for macOS (Apple Silicon / Intel) and Linux are available on the [Releases](https://github.com/jake-hong/ail/releases) page.
 
 ---
 
