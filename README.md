@@ -6,6 +6,23 @@ ail indexes your local AI session data into a single SQLite database with full-t
 
 ---
 
+## Quick Start
+
+```bash
+brew install sungeun/tap/ail
+ail setup
+```
+
+Restart your shell. Then just type `ail`.
+
+### Quick Resume (no TUI)
+
+```bash
+ail resume project-name    # fuzzy-matches and resumes the best match directly
+```
+
+---
+
 ## Why
 
 If you use multiple AI coding agents, your session history is scattered across different directories and formats. ail brings it all together:
@@ -21,6 +38,12 @@ If you use multiple AI coding agents, your session history is scattered across d
 
 ## Install
 
+### Homebrew (recommended)
+
+```bash
+brew install sungeun/tap/ail
+```
+
 ### From source
 
 ```bash
@@ -30,30 +53,9 @@ cd ail
 cargo install --path .
 ```
 
-### Build manually
+### Download binary
 
-```bash
-cargo build --release
-# Binary at target/release/ail
-```
-
----
-
-## Quick Start
-
-```bash
-# 1. Detect installed agents and index all sessions
-ail setup
-
-# 2. Browse sessions in the TUI
-ail
-
-# 3. Search conversation history
-ail history -k "authentication"
-
-# 4. Generate a weekly work report
-ail report --week
-```
+Pre-built binaries for macOS (Apple Silicon / Intel) and Linux are available on the [Releases](https://github.com/sungeun/ail/releases) page.
 
 ---
 
@@ -187,9 +189,8 @@ Available MCP tools:
 # Show current config
 ail config --show
 
-# Set values
-ail config --set db_path ~/.ail/custom.db
-ail config --set default_agent claude-code
+# Edit config in your default editor
+ail config --edit
 ```
 
 Config file location: `~/.config/ail/config.toml`
@@ -246,7 +247,7 @@ The TUI has a 3-panel layout:
 3. **Query** — CLI commands and TUI views query the database with full-text search
 4. **Export** — Context can be exported as markdown and injected into other agents' config files
 
-The database is stored at `~/.local/share/ail/ail.db` by default. All data stays local.
+All data stays local. No API keys, no network calls.
 
 ---
 
@@ -262,14 +263,6 @@ src/
   config.rs       # TOML configuration
   main.rs         # Entry point and command handlers
 ```
-
----
-
-## Requirements
-
-- Rust 1.70+ (build)
-- SQLite (bundled via rusqlite)
-- At least one supported AI agent installed
 
 ---
 
