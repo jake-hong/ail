@@ -265,6 +265,10 @@ src/
 ```
 
 ---
+## Acknowledgments
+
+- Inspired by [agf](https://github.com/subinium/agf) — a great session finder for AI coding agents. ail extends the concept with full-text history search, work reports, context sharing, and MCP integration.
+- Built with [ratatui](https://ratatui.rs/), [clap](https://docs.rs/clap/), and [rusqlite](https://docs.rs/rusqlite/).
 
 ## License
 
