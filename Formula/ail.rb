@@ -1,8 +1,8 @@
 class Ail < Formula
   desc "Unified CLI/TUI for managing AI coding agent sessions"
   homepage "https://github.com/jake-hong/ail"
-  url "https://github.com/jake-hong/ail/archive/refs/tags/v0.1.0.tar.gz"
-  sha256 "2fc035b1c253ade79d45ac251b9c7c12efa38b8d735418c43a2b1e9373bbb126"
+  url "https://github.com/jake-hong/ail/archive/refs/tags/v0.2.0.tar.gz"
+  sha256 "6337b4dbc875539410111976c70f26d01088bc0b60fab74f7aad1eba8fd6f808"
   license "MIT"
 
   depends_on "rust" => :build
