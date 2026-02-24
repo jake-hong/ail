@@ -756,10 +756,12 @@ impl App {
         frame.render_widget(content, chunks[1]);
 
         // Status bar
-        let status = Paragraph::new(
-            " j/k: Scroll | PgUp/PgDn: Page | e: Export | Esc: Back",
-        )
-        .style(self.theme.status_bar_style());
+        let detail_help = if let Some(ref msg) = self.status_msg {
+            format!(" {} ", msg)
+        } else {
+            " j/k: Scroll | PgUp/PgDn: Page | e: Export | Esc: Back".to_string()
+        };
+        let status = Paragraph::new(detail_help).style(self.theme.status_bar_style());
         frame.render_widget(status, chunks[2]);
     }
 

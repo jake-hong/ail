@@ -243,6 +243,8 @@ impl AgentAdapter for ClaudeCodeAdapter {
                 .to_string();
             let project_path = Self::decode_project_path(&dir_name);
 
+            eprintln!("  Scanning project: {}", dir_name);
+
             // Scan for .jsonl files directly in project dir
             for entry in fs::read_dir(&project_dir)? {
                 let entry = entry?;
@@ -254,6 +256,14 @@ impl AgentAdapter for ClaudeCodeAdapter {
                     // Skip subagent files
                     if path.to_string_lossy().contains("subagent") {
                         continue;
+                    }
+
+                    // Skip very large files (>10MB) to avoid hanging
+                    if let Ok(meta) = fs::metadata(&path) {
+                        if meta.len() > 10 * 1024 * 1024 {
+                            eprintln!("  Skipping large file ({:.1}MB): {}", meta.len() as f64 / 1_048_576.0, path.file_name().unwrap_or_default().to_string_lossy());
+                            continue;
+                        }
                     }
 
                     match Self::parse_session_file(&path, project_path.as_deref()) {
@@ -282,6 +292,14 @@ impl AgentAdapter for ClaudeCodeAdapter {
                     let path = entry.path();
 
                     if path.extension().map_or(false, |ext| ext == "jsonl") && path.is_file() {
+                        // Skip very large files (>10MB) to avoid hanging
+                        if let Ok(meta) = fs::metadata(&path) {
+                            if meta.len() > 10 * 1024 * 1024 {
+                                eprintln!("  Skipping large file ({:.1}MB): {}", meta.len() as f64 / 1_048_576.0, path.file_name().unwrap_or_default().to_string_lossy());
+                                continue;
+                            }
+                        }
+
                         match Self::parse_session_file(&path, project_path.as_deref()) {
                             Ok(session) => {
                                 if !session.messages.is_empty() {

@@ -37,6 +37,7 @@ pub fn rebuild_all(db: &Database) -> Result<Vec<IndexResult>> {
 
 fn index_adapter(db: &Database, adapter: &dyn AgentAdapter) -> Result<IndexResult> {
     let agent_name = adapter.agent_type().as_str().to_string();
+    eprintln!("  Scanning {} sessions...", agent_name);
     let sessions = adapter.scan_sessions()?;
     let sessions_found = sessions.len();
     let mut sessions_new = 0;

@@ -3,7 +3,7 @@ use crate::core::context::{self, DetailLevel};
 use crate::core::db::Database;
 use anyhow::Result;
 use serde_json::{json, Value};
-use std::io::{self, BufRead, Write};
+use std::io::{self, BufRead, Read, Write};
 
 pub fn run_mcp_server() -> Result<()> {
     let db_path = config::db_path();
@@ -17,7 +17,8 @@ pub fn run_mcp_server() -> Result<()> {
     let mut buf_reader = io::BufReader::new(reader);
 
     loop {
-        // Read Content-Length header
+        // Read headers and extract Content-Length
+        let mut content_length: usize = 0;
         let mut header = String::new();
         loop {
             header.clear();
@@ -29,16 +30,22 @@ pub fn run_mcp_server() -> Result<()> {
             if trimmed.is_empty() {
                 break; // End of headers
             }
+            // Parse Content-Length header
+            if let Some(val) = trimmed.strip_prefix("Content-Length:") {
+                if let Ok(len) = val.trim().parse::<usize>() {
+                    content_length = len;
+                }
+            }
         }
 
-        // Read content-length from previous headers
-        // Simple approach: try to read a line as JSON directly
-        let mut line = String::new();
-        let bytes_read = buf_reader.read_line(&mut line)?;
-        if bytes_read == 0 {
-            return Ok(());
+        if content_length == 0 {
+            continue; // No Content-Length, skip
         }
 
+        // Read exact body bytes
+        let mut body = vec![0u8; content_length];
+        buf_reader.read_exact(&mut body)?;
+        let line = String::from_utf8_lossy(&body);
         let line = line.trim();
         if line.is_empty() {
             continue;

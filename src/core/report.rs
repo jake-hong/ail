@@ -146,15 +146,11 @@ fn generate_markdown(
                 .as_deref()
                 .or(session.summary.as_deref())
                 .unwrap_or("-");
-            let request: String = request.chars().take(80).collect();
 
-            let work: String = session
+            let work = session
                 .work_summary
                 .as_deref()
-                .unwrap_or("-")
-                .chars()
-                .take(80)
-                .collect();
+                .unwrap_or("-");
 
             // Get file changes
             let file_changes = get_session_file_changes(db, &session.id);
