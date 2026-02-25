@@ -77,6 +77,8 @@ impl fmt::Display for Role {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionData {
     pub id: String,
+    /// The conversation/session ID used by the agent for resume (may differ from file-based id)
+    pub conversation_id: Option<String>,
     pub agent: AgentType,
     pub project_path: Option<PathBuf>,
     pub project_name: Option<String>,

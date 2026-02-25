@@ -169,6 +169,7 @@ fn parse_codex_session(path: &std::path::Path, session_id: &str) -> Result<Optio
 
     let mut session = SessionData {
         id: session_id.to_string(),
+        conversation_id: None,
         agent: AgentType::Codex,
         project_path,
         project_name,

@@ -170,8 +170,8 @@ fn cmd_setup() -> Result<()> {
         if let Some(result) = indexer::index_agent(&db, agent_name)? {
             if result.sessions_found > 0 {
                 println!(
-                    "    {} — {} sessions found, {} new",
-                    result.agent, result.sessions_found, result.sessions_new
+                    "    {} — {} sessions found, {} new, {} updated",
+                    result.agent, result.sessions_found, result.sessions_new, result.sessions_updated
                 );
             }
             total_found += result.sessions_found;
@@ -229,8 +229,8 @@ fn cmd_index(agent: Option<String>, rebuild: bool) -> Result<()> {
         println!("Indexing {} sessions...", agent_name);
         if let Some(result) = indexer::index_agent(&db, agent_name)? {
             println!(
-                "  {} found, {} new",
-                result.sessions_found, result.sessions_new
+                "  {} found, {} new, {} updated",
+                result.sessions_found, result.sessions_new, result.sessions_updated
             );
         } else {
             println!("  Agent not found or not installed: {}", agent_name);
@@ -241,13 +241,14 @@ fn cmd_index(agent: Option<String>, rebuild: bool) -> Result<()> {
         for r in &results {
             if r.sessions_found > 0 {
                 println!(
-                    "  {}: {} found, {} new",
-                    r.agent, r.sessions_found, r.sessions_new
+                    "  {}: {} found, {} new, {} updated",
+                    r.agent, r.sessions_found, r.sessions_new, r.sessions_updated
                 );
             }
         }
-        let total: usize = results.iter().map(|r| r.sessions_new).sum();
-        println!("✓ {} new sessions indexed", total);
+        let total_new: usize = results.iter().map(|r| r.sessions_new).sum();
+        let total_updated: usize = results.iter().map(|r| r.sessions_updated).sum();
+        println!("✓ {} new, {} updated", total_new, total_updated);
     }
 
     Ok(())
@@ -376,35 +377,26 @@ fn cmd_resume(
     let agent_type = adapters::traits::AgentType::from_str(&session.agent)
         .ok_or_else(|| anyhow::anyhow!("Unknown agent: {}", session.agent))?;
 
+    // Use conversation_id for resume if available, otherwise fall back to id
+    let resume_id = session.conversation_id.as_deref().unwrap_or(&session.id);
+    let project_dir = session.project_path.as_deref().unwrap_or(".");
+
     let cmd = match agent_type {
         adapters::traits::AgentType::ClaudeCode => {
             if let Some(ref ctx) = context_file {
                 format!(
                     "cd {} && claude --resume {} --context {}",
-                    session.project_path.as_deref().unwrap_or("."),
-                    session.id,
-                    ctx
+                    project_dir, resume_id, ctx
                 )
             } else {
-                format!(
-                    "cd {} && claude --resume {}",
-                    session.project_path.as_deref().unwrap_or("."),
-                    session.id
-                )
+                format!("cd {} && claude --resume {}", project_dir, resume_id)
             }
         }
         adapters::traits::AgentType::Codex => {
-            format!(
-                "cd {} && codex --resume {}",
-                session.project_path.as_deref().unwrap_or("."),
-                session.id
-            )
+            format!("cd {} && codex --resume {}", project_dir, session.id)
         }
         adapters::traits::AgentType::Cursor => {
-            format!(
-                "cursor {}",
-                session.project_path.as_deref().unwrap_or(".")
-            )
+            format!("cursor {}", project_dir)
         }
     };
 

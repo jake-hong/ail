@@ -27,6 +27,7 @@ pub enum View {
     SessionDetail,
     HistorySearch,
     ActionMenu,
+    ConfirmDelete,
 }
 
 pub struct App {
@@ -93,8 +94,7 @@ impl App {
                 "Resume session".to_string(),
                 "Export context".to_string(),
                 "Open project directory".to_string(),
-                "Search in session".to_string(),
-                "Add tags".to_string(),
+                "View conversation".to_string(),
                 "Delete session".to_string(),
             ],
             action_state: ListState::default(),
@@ -215,9 +215,8 @@ impl App {
             KeyCode::Char('r') => {
                 // Resume session
                 if let Some(session) = self.selected_session() {
-                    let cmd = format!("claude --resume {}", session.id);
+                    let cmd = build_resume_cmd(session);
                     self.should_quit = true;
-                    // Store command for execution after TUI closes
                     std::env::set_var("AIL_RESUME_CMD", &cmd);
                 }
             }
@@ -225,9 +224,10 @@ impl App {
                 // Export context
                 if let Some(session) = self.selected_session() {
                     let sid = session.id.clone();
+                    let project = session.project_name.clone().unwrap_or_else(|| "session".to_string());
                     if let Ok(ctx) = context::export_context(&self.db, &sid, DetailLevel::Summary) {
-                        let path = ".ail-context.md";
-                        let _ = std::fs::write(path, &ctx);
+                        let path = export_filename(&project);
+                        let _ = std::fs::write(&path, &ctx);
                         self.status_msg = Some(format!("Exported to {}", path));
                     }
                 }
@@ -274,9 +274,12 @@ impl App {
             }
             KeyCode::Char('e') => {
                 if let Some(ref sid) = self.detail_session_id {
+                    let project = self.selected_session()
+                        .and_then(|s| s.project_name.clone())
+                        .unwrap_or_else(|| "session".to_string());
                     if let Ok(ctx) = context::export_context(&self.db, sid, DetailLevel::Summary) {
-                        let path = ".ail-context.md";
-                        let _ = std::fs::write(path, &ctx);
+                        let path = export_filename(&project);
+                        let _ = std::fs::write(&path, &ctx);
                         self.status_msg = Some(format!("Exported to {}", path));
                     }
                 }
@@ -349,10 +352,8 @@ impl App {
                     0 => {
                         // Resume
                         if let Some(session) = self.selected_session() {
-                            std::env::set_var(
-                                "AIL_RESUME_CMD",
-                                format!("claude --resume {}", session.id),
-                            );
+                            let cmd = build_resume_cmd(session);
+                            std::env::set_var("AIL_RESUME_CMD", &cmd);
                             self.should_quit = true;
                         }
                     }
@@ -360,11 +361,12 @@ impl App {
                         // Export
                         if let Some(session) = self.selected_session() {
                             let sid = session.id.clone();
+                            let project = session.project_name.clone().unwrap_or_else(|| "session".to_string());
                             if let Ok(ctx) =
                                 context::export_context(&self.db, &sid, DetailLevel::Summary)
                             {
-                                let path = ".ail-context.md";
-                                let _ = std::fs::write(path, &ctx);
+                                let path = export_filename(&project);
+                                let _ = std::fs::write(&path, &ctx);
                                 self.status_msg = Some(format!("Exported to {}", path));
                             }
                         }
@@ -380,17 +382,12 @@ impl App {
                         }
                     }
                     3 => {
-                        // Search in session
+                        // View conversation
                         self.open_detail()?;
                     }
-                    5 => {
-                        // Delete
-                        if let Some(session) = self.selected_session() {
-                            let sid = session.id.clone();
-                            self.db.delete_session(&sid)?;
-                            self.load_sessions()?;
-                        }
-                        self.view = View::SessionList;
+                    4 => {
+                        // Delete — show confirmation
+                        self.view = View::ConfirmDelete;
                     }
                     _ => {
                         self.view = View::SessionList;
@@ -419,7 +416,27 @@ impl App {
                     View::SessionDetail => self.handle_key_session_detail(key)?,
                     View::HistorySearch => self.handle_key_history(key)?,
                     View::ActionMenu => self.handle_key_action_menu(key)?,
+                    View::ConfirmDelete => self.handle_key_confirm_delete(key)?,
                 }
+            }
+        }
+        Ok(())
+    }
+
+    fn handle_key_confirm_delete(&mut self, key: KeyEvent) -> Result<()> {
+        match key.code {
+            KeyCode::Char('y') | KeyCode::Char('Y') => {
+                if let Some(session) = self.selected_session() {
+                    let sid = session.id.clone();
+                    self.db.delete_session(&sid)?;
+                    self.load_sessions()?;
+                    self.status_msg = Some("Session deleted".to_string());
+                }
+                self.view = View::SessionList;
+            }
+            _ => {
+                // Any other key cancels
+                self.view = View::ActionMenu;
             }
         }
         Ok(())
@@ -433,6 +450,10 @@ impl App {
             View::ActionMenu => {
                 self.draw_session_list(frame);
                 self.draw_action_popup(frame);
+            }
+            View::ConfirmDelete => {
+                self.draw_session_list(frame);
+                self.draw_confirm_delete_popup(frame);
             }
         }
     }
@@ -873,6 +894,50 @@ impl App {
 
         frame.render_stateful_widget(list, popup_area, &mut self.action_state);
     }
+
+    fn draw_confirm_delete_popup(&self, frame: &mut ratatui::Frame) {
+        let area = frame.area();
+        let popup_width = 40;
+        let popup_height = 4;
+        let x = area.width.saturating_sub(popup_width) / 2;
+        let y = area.height.saturating_sub(popup_height) / 2;
+        let popup_area = Rect::new(x, y, popup_width.min(area.width), popup_height.min(area.height));
+
+        frame.render_widget(Clear, popup_area);
+
+        let sid = self.selected_session()
+            .map(|s| &s.id[..s.id.len().min(8)])
+            .unwrap_or("?");
+        let text = format!("Delete session {}...? (y/n)", sid);
+        let paragraph = Paragraph::new(text)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::Red))
+                    .title(Span::styled(" Confirm ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD))),
+            )
+            .wrap(Wrap { trim: true });
+
+        frame.render_widget(paragraph, popup_area);
+    }
+}
+
+/// Build agent-specific resume command
+fn build_resume_cmd(session: &SessionRow) -> String {
+    let resume_id = session.conversation_id.as_deref().unwrap_or(&session.id);
+    let project_dir = session.project_path.as_deref().unwrap_or(".");
+    match session.agent.as_str() {
+        "claude-code" => format!("cd {} && claude --resume {}", project_dir, resume_id),
+        "codex" => format!("cd {} && codex --resume {}", project_dir, session.id),
+        "cursor" => format!("cursor {}", project_dir),
+        _ => format!("cd {} && claude --resume {}", project_dir, resume_id),
+    }
+}
+
+/// Generate unique export filename with project name and timestamp
+fn export_filename(project: &str) -> String {
+    let ts = chrono::Local::now().format("%Y%m%d-%H%M%S");
+    format!(".ail-context-{}-{}.md", project, ts)
 }
 
 pub fn run_tui() -> Result<()> {
@@ -930,18 +995,53 @@ pub fn run_tui() -> Result<()> {
     }
     if let Ok(path) = std::env::var("AIL_CD_PATH") {
         std::env::remove_var("AIL_CD_PATH");
-        // Open in new terminal window (macOS) since child process cd doesn't affect parent shell
-        let _ = std::process::Command::new("open")
-            .arg("-a")
-            .arg("Terminal")
-            .arg(&path)
-            .status();
+        open_project_dir(&path);
     }
 
     Ok(())
 }
 
 // Helper functions
+
+/// Open project directory in the appropriate terminal.
+/// Supports iTerm2 (new tab), macOS Terminal.app, and Linux.
+fn open_project_dir(path: &str) {
+    #[cfg(target_os = "macos")]
+    {
+        let term = std::env::var("TERM_PROGRAM").unwrap_or_default();
+        if term == "iTerm.app" {
+            let script = format!(
+                r#"tell application "iTerm2"
+                    tell current window
+                        create tab with default profile
+                        tell current session
+                            write text "cd '{}'"
+                        end tell
+                    end tell
+                end tell"#,
+                path
+            );
+            let _ = std::process::Command::new("osascript")
+                .arg("-e")
+                .arg(&script)
+                .status();
+        } else {
+            let _ = std::process::Command::new("open")
+                .arg("-a")
+                .arg("Terminal")
+                .arg(path)
+                .status();
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        // Linux: try xdg-open, fall back to printing the path
+        let status = std::process::Command::new("xdg-open").arg(path).status();
+        if status.is_err() {
+            println!("cd {}", path);
+        }
+    }
+}
 
 fn agent_display(agent: &str) -> &str {
     match agent {

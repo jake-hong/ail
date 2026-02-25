@@ -11,6 +11,7 @@ pub struct Database {
 #[derive(Debug, Clone)]
 pub struct SessionRow {
     pub id: String,
+    pub conversation_id: Option<String>,
     pub agent: String,
     pub project_path: Option<String>,
     pub project_name: Option<String>,
@@ -157,19 +158,23 @@ impl Database {
     }
 
     fn migrate(&self) -> Result<()> {
-        // Safe migration: add llm_summary column if it doesn't exist
+        // Safe migration: add columns if they don't exist
         self.conn
             .execute("ALTER TABLE sessions ADD COLUMN llm_summary TEXT", [])
+            .ok();
+        self.conn
+            .execute("ALTER TABLE sessions ADD COLUMN conversation_id TEXT", [])
             .ok();
         Ok(())
     }
 
     pub fn insert_session(&self, session: &SessionData) -> Result<()> {
         self.conn.execute(
-            "INSERT OR REPLACE INTO sessions (id, agent, project_path, project_name, summary, work_summary, started_at, ended_at, message_count, files_created, files_modified, files_deleted, tags)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+            "INSERT OR REPLACE INTO sessions (id, conversation_id, agent, project_path, project_name, summary, work_summary, started_at, ended_at, message_count, files_created, files_modified, files_deleted, tags)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
             params![
                 session.id,
+                session.conversation_id,
                 session.agent.as_str(),
                 session.project_path.as_ref().map(|p| p.to_string_lossy().to_string()),
                 session.project_name,
@@ -277,30 +282,33 @@ impl Database {
     pub fn get_session(&self, session_id: &str) -> Result<Option<SessionRow>> {
         self.conn
             .query_row(
-                "SELECT id, agent, project_path, project_name, summary, work_summary, llm_summary, started_at, ended_at, message_count, files_created, files_modified, files_deleted, tags
+                "SELECT id, conversation_id, agent, project_path, project_name, summary, work_summary, llm_summary, started_at, ended_at, message_count, files_created, files_modified, files_deleted, tags
                  FROM sessions WHERE id = ?1",
                 params![session_id],
-                |row| {
-                    Ok(SessionRow {
-                        id: row.get(0)?,
-                        agent: row.get(1)?,
-                        project_path: row.get(2)?,
-                        project_name: row.get(3)?,
-                        summary: row.get(4)?,
-                        work_summary: row.get(5)?,
-                        llm_summary: row.get(6)?,
-                        started_at: row.get(7)?,
-                        ended_at: row.get(8)?,
-                        message_count: row.get(9)?,
-                        files_created: row.get(10)?,
-                        files_modified: row.get(11)?,
-                        files_deleted: row.get(12)?,
-                        tags: row.get::<_, String>(13)?,
-                    })
-                },
+                |row| Self::row_to_session(row),
             )
             .optional()
             .map_err(Into::into)
+    }
+
+    fn row_to_session(row: &rusqlite::Row) -> rusqlite::Result<SessionRow> {
+        Ok(SessionRow {
+            id: row.get(0)?,
+            conversation_id: row.get(1)?,
+            agent: row.get(2)?,
+            project_path: row.get(3)?,
+            project_name: row.get(4)?,
+            summary: row.get(5)?,
+            work_summary: row.get(6)?,
+            llm_summary: row.get(7)?,
+            started_at: row.get(8)?,
+            ended_at: row.get(9)?,
+            message_count: row.get(10)?,
+            files_created: row.get(11)?,
+            files_modified: row.get(12)?,
+            files_deleted: row.get(13)?,
+            tags: row.get::<_, String>(14)?,
+        })
     }
 
     pub fn list_sessions(
@@ -312,7 +320,7 @@ impl Database {
         limit: usize,
     ) -> Result<Vec<SessionRow>> {
         let mut sql = String::from(
-            "SELECT id, agent, project_path, project_name, summary, work_summary, llm_summary, started_at, ended_at, message_count, files_created, files_modified, files_deleted, tags
+            "SELECT id, conversation_id, agent, project_path, project_name, summary, work_summary, llm_summary, started_at, ended_at, message_count, files_created, files_modified, files_deleted, tags
              FROM sessions WHERE 1=1",
         );
         let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
@@ -343,24 +351,7 @@ impl Database {
             param_values.iter().map(|p| p.as_ref()).collect();
 
         let mut stmt = self.conn.prepare(&sql)?;
-        let rows = stmt.query_map(params_refs.as_slice(), |row| {
-            Ok(SessionRow {
-                id: row.get(0)?,
-                agent: row.get(1)?,
-                project_path: row.get(2)?,
-                project_name: row.get(3)?,
-                summary: row.get(4)?,
-                work_summary: row.get(5)?,
-                llm_summary: row.get(6)?,
-                started_at: row.get(7)?,
-                ended_at: row.get(8)?,
-                message_count: row.get(9)?,
-                files_created: row.get(10)?,
-                files_modified: row.get(11)?,
-                files_deleted: row.get(12)?,
-                tags: row.get::<_, String>(13)?,
-            })
-        })?;
+        let rows = stmt.query_map(params_refs.as_slice(), |row| Self::row_to_session(row))?;
 
         let mut sessions = Vec::new();
         for row in rows {
@@ -487,7 +478,7 @@ impl Database {
     ) -> Result<Vec<SessionRow>> {
         let pattern = format!("%{}%", file_path);
         let mut stmt = self.conn.prepare(
-            "SELECT DISTINCT s.id, s.agent, s.project_path, s.project_name, s.summary, s.work_summary, s.llm_summary, s.started_at, s.ended_at, s.message_count, s.files_created, s.files_modified, s.files_deleted, s.tags
+            "SELECT DISTINCT s.id, s.conversation_id, s.agent, s.project_path, s.project_name, s.summary, s.work_summary, s.llm_summary, s.started_at, s.ended_at, s.message_count, s.files_created, s.files_modified, s.files_deleted, s.tags
              FROM sessions s
              JOIN tool_calls tc ON tc.session_id = s.id
              WHERE tc.file_path LIKE ?1
@@ -495,24 +486,7 @@ impl Database {
              LIMIT ?2",
         )?;
 
-        let rows = stmt.query_map(params![pattern, limit as i64], |row| {
-            Ok(SessionRow {
-                id: row.get(0)?,
-                agent: row.get(1)?,
-                project_path: row.get(2)?,
-                project_name: row.get(3)?,
-                summary: row.get(4)?,
-                work_summary: row.get(5)?,
-                llm_summary: row.get(6)?,
-                started_at: row.get(7)?,
-                ended_at: row.get(8)?,
-                message_count: row.get(9)?,
-                files_created: row.get(10)?,
-                files_modified: row.get(11)?,
-                files_deleted: row.get(12)?,
-                tags: row.get::<_, String>(13)?,
-            })
-        })?;
+        let rows = stmt.query_map(params![pattern, limit as i64], |row| Self::row_to_session(row))?;
 
         let mut sessions = Vec::new();
         for row in rows {
@@ -671,6 +645,78 @@ impl Database {
             |row| row.get(0),
         )?;
         Ok(count > 0)
+    }
+
+    pub fn session_message_count(&self, session_id: &str) -> Result<i64> {
+        self.conn
+            .query_row(
+                "SELECT message_count FROM sessions WHERE id = ?1",
+                params![session_id],
+                |row| row.get(0),
+            )
+            .map_err(Into::into)
+    }
+
+    /// Update an existing session with new data (upsert pattern).
+    /// Replaces messages and tool_calls entirely.
+    pub fn update_session(&self, session: &SessionData) -> Result<()> {
+        // Update session metadata
+        self.conn.execute(
+            "UPDATE sessions SET conversation_id = ?1, summary = ?2, work_summary = ?3, ended_at = ?4, message_count = ?5, files_created = ?6, files_modified = ?7, files_deleted = ?8
+             WHERE id = ?9",
+            params![
+                session.conversation_id,
+                session.summary,
+                session.work_summary,
+                session.ended_at.map(|t| t.to_rfc3339()),
+                session.message_count() as i64,
+                session.files_created() as i64,
+                session.files_modified() as i64,
+                session.files_deleted() as i64,
+                session.id,
+            ],
+        )?;
+
+        // Replace messages: delete old, insert new
+        self.conn.execute("DELETE FROM messages_fts WHERE session_id = ?1", params![session.id])?;
+        self.conn.execute("DELETE FROM messages WHERE session_id = ?1", params![session.id])?;
+        for msg in &session.messages {
+            self.conn.execute(
+                "INSERT INTO messages (session_id, role, content, timestamp, files_changed) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![
+                    session.id,
+                    msg.role.as_str(),
+                    msg.content,
+                    msg.timestamp.map(|t| t.to_rfc3339()),
+                    serde_json::to_string(&msg.files_changed).unwrap_or_default(),
+                ],
+            )?;
+            self.conn.execute(
+                "INSERT INTO messages_fts (session_id, role, content) VALUES (?1, ?2, ?3)",
+                params![session.id, msg.role.as_str(), msg.content],
+            )?;
+        }
+
+        // Replace tool calls
+        self.conn.execute("DELETE FROM tool_calls WHERE session_id = ?1", params![session.id])?;
+        for tc in &session.tool_calls {
+            self.conn.execute(
+                "INSERT INTO tool_calls (session_id, tool_name, file_path, timestamp) VALUES (?1, ?2, ?3, ?4)",
+                params![session.id, tc.tool_name, tc.file_path, tc.timestamp.map(|t| t.to_rfc3339())],
+            )?;
+        }
+
+        // Update sessions FTS
+        self.conn.execute(
+            "UPDATE sessions_fts SET summary = ?1, work_summary = ?2 WHERE session_id = ?3",
+            params![
+                session.summary.as_deref().unwrap_or(""),
+                session.work_summary.as_deref().unwrap_or(""),
+                session.id,
+            ],
+        )?;
+
+        Ok(())
     }
 
     pub fn session_count(&self) -> Result<i64> {
