@@ -31,11 +31,11 @@ fn call_claude_summarize(
 
     let body = serde_json::json!({
         "model": model,
-        "max_tokens": 150,
+        "max_tokens": 300,
         "messages": [{
             "role": "user",
             "content": format!(
-                "Summarize this AI coding session in ONE concise sentence (max 100 chars). Focus on what was accomplished. Reply with ONLY the summary, no quotes or prefixes.\n\n{}",
+                "Summarize this AI coding session. Focus on what was accomplished.\nIf multiple distinct tasks were done, list each as a bullet point (max 3 bullets, each under 80 chars).\nIf only one task, use a single sentence (max 100 chars).\nReply with ONLY the summary, no quotes or prefixes.\n\nExample (multi-task):\n- Implemented user authentication with JWT\n- Fixed database migration bug in users table\n\nExample (single task):\nAdded dark mode toggle to application settings\n\n{}",
                 input
             )
         }]
@@ -90,11 +90,16 @@ fn build_session_text(db: &Database, session: &SessionRow) -> String {
         text.push_str(&format!("Work: {}\n", work));
     }
 
-    // Add messages (truncated)
+    // Add user messages (primary signal) and short AI summaries
     if let Ok(messages) = db.get_messages(&session.id) {
-        for msg in messages.iter().filter(|m| m.role != "tool") {
+        for msg in &messages {
+            if msg.role == "tool" {
+                continue;
+            }
             let role_label = if msg.role == "user" { "User" } else { "AI" };
-            let content: String = msg.content.chars().take(500).collect();
+            // User messages get more space, AI messages are truncated shorter
+            let max_chars = if msg.role == "user" { 500 } else { 200 };
+            let content: String = msg.content.chars().take(max_chars).collect();
             text.push_str(&format!("\n{}: {}", role_label, content));
         }
     }

@@ -62,6 +62,7 @@ impl ClaudeCodeAdapter {
         let mut started_at: Option<DateTime<Utc>> = None;
         let mut ended_at: Option<DateTime<Utc>> = None;
         let mut cwd: Option<String> = None;
+        let mut conversation_id: Option<String> = None;
 
         for line in content.lines() {
             if line.trim().is_empty() {
@@ -73,6 +74,13 @@ impl ClaudeCodeAdapter {
             };
 
             let msg_type = v.get("type").and_then(|t| t.as_str()).unwrap_or("");
+
+            // Extract sessionId from JSONL (used by Claude Code for --resume)
+            if conversation_id.is_none() {
+                if let Some(sid) = v.get("sessionId").and_then(|s| s.as_str()) {
+                    conversation_id = Some(sid.to_string());
+                }
+            }
 
             // Extract cwd from first user message
             if cwd.is_none() {
@@ -186,6 +194,7 @@ impl ClaudeCodeAdapter {
 
         let mut session = SessionData {
             id: session_id,
+            conversation_id,
             agent: AgentType::ClaudeCode,
             project_path: resolved_project,
             project_name,

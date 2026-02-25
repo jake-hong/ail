@@ -151,6 +151,7 @@ fn parse_cursor_session(path: &std::path::Path) -> Result<Option<SessionData>> {
 
     let mut session = SessionData {
         id: session_id,
+        conversation_id: None,
         agent: AgentType::Cursor,
         project_path: None,
         project_name: None,

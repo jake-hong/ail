@@ -6,6 +6,7 @@ pub struct IndexResult {
     pub agent: String,
     pub sessions_found: usize,
     pub sessions_new: usize,
+    pub sessions_updated: usize,
 }
 
 pub fn index_all(db: &Database) -> Result<Vec<IndexResult>> {
@@ -41,9 +42,17 @@ fn index_adapter(db: &Database, adapter: &dyn AgentAdapter) -> Result<IndexResul
     let sessions = adapter.scan_sessions()?;
     let sessions_found = sessions.len();
     let mut sessions_new = 0;
+    let mut sessions_updated = 0;
 
     for session in sessions {
-        if !db.session_exists(&session.id)? {
+        if db.session_exists(&session.id)? {
+            // Update if message count changed (session grew)
+            let old_count = db.session_message_count(&session.id).unwrap_or(0);
+            if session.messages.len() as i64 != old_count {
+                db.update_session(&session)?;
+                sessions_updated += 1;
+            }
+        } else {
             db.insert_session(&session)?;
             sessions_new += 1;
         }
@@ -53,5 +62,6 @@ fn index_adapter(db: &Database, adapter: &dyn AgentAdapter) -> Result<IndexResul
         agent: agent_name,
         sessions_found,
         sessions_new,
+        sessions_updated,
     })
 }
